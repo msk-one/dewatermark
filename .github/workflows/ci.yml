@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Engine parity tests (pytest)
+        run: |
+          python3 -m pip install --upgrade pip pytest
+          python3 -m pytest -q
+
+      - name: Swift tests (XCTest)
+        run: swift test --scratch-path /tmp/dewatermark-build
+
+      - name: Release build sanity
+        run: swift build -c release --scratch-path /tmp/dewatermark-build

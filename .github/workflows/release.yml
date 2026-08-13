@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Derive version from tag
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build app bundle
+        run: VERSION="${{ steps.meta.outputs.version }}" scripts/build-app.sh
+
+      - name: Zip app
+        run: |
+          cd dist
+          ditto -c -k --keepParent Dewatermark.app "Dewatermark-${{ steps.meta.outputs.version }}.zip"
+
+      - name: Create DMG
+        run: scripts/make-dmg.sh "${{ steps.meta.outputs.version }}"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/Dewatermark-${{ steps.meta.outputs.version }}.zip
+            dist/Dewatermark-${{ steps.meta.outputs.version }}.dmg
+          generate_release_notes: true
