@@ -1,0 +1,21 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj
+xcuserdata/
+
+# App artifacts
+dist/
+*.app
+*.dmg
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# macOS
+.DS_Store
