@@ -21,20 +21,25 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build app bundle
-        run: VERSION="${{ steps.meta.outputs.version }}" scripts/build-app.sh
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DIST_DIR: /tmp/dewatermark-dist
+        run: scripts/build-app.sh
 
       - name: Zip app
         run: |
-          cd dist
+          cd /tmp/dewatermark-dist
           ditto -c -k --keepParent Dewatermark.app "Dewatermark-${{ steps.meta.outputs.version }}.zip"
 
       - name: Create DMG
+        env:
+          DIST_DIR: /tmp/dewatermark-dist
         run: scripts/make-dmg.sh "${{ steps.meta.outputs.version }}"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/Dewatermark-${{ steps.meta.outputs.version }}.zip
-            dist/Dewatermark-${{ steps.meta.outputs.version }}.dmg
+            /tmp/dewatermark-dist/Dewatermark-${{ steps.meta.outputs.version }}.zip
+            /tmp/dewatermark-dist/Dewatermark-${{ steps.meta.outputs.version }}.dmg
           generate_release_notes: true
