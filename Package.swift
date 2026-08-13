@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "DewatermarkCore", targets: ["DewatermarkCore"]),
         .executable(name: "Dewatermark", targets: ["Dewatermark"]),
+        .executable(name: "SmokeRunner", targets: ["SmokeRunner"]),
     ],
     targets: [
         .target(
@@ -19,6 +20,11 @@ let package = Package(
             name: "Dewatermark",
             dependencies: ["DewatermarkCore"],
             path: "Sources/Dewatermark"
+        ),
+        .executableTarget(
+            name: "SmokeRunner",
+            dependencies: ["DewatermarkCore"],
+            path: "Sources/SmokeRunner"
         ),
         .testTarget(
             name: "DewatermarkCoreTests",
