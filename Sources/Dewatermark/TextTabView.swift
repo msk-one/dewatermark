@@ -174,10 +174,11 @@ struct TextTabView: View {
         defer { busy = nil }
         do {
             let engine = try settings.makeEngine()
-            var opts = CleanTextOptions()
-            opts.nfkc = nfkc
-            opts.aggressiveHomoglyphs = aggressive
-            opts.normalizeSpaces = normalizeSpaces
+            var mutableOpts = CleanTextOptions()
+            mutableOpts.nfkc = nfkc
+            mutableOpts.aggressiveHomoglyphs = aggressive
+            mutableOpts.normalizeSpaces = normalizeSpaces
+            let opts = mutableOpts
             let inputText = input
             let result = try await Task.detached {
                 try engine.cleanText(inputText, options: opts)

@@ -109,8 +109,9 @@ struct RewriteSheet: View {
     private func preview() async {
         do {
             let engine = try settings.makeEngine()
-            var opts = options
-            opts.backend = .printPrompt
+            var mutableOpts = options
+            mutableOpts.backend = .printPrompt
+            let opts = mutableOpts
             let result = try await Task.detached {
                 try engine.rewrite(text, options: opts)
             }.value
