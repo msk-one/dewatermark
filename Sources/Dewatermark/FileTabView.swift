@@ -24,38 +24,27 @@ struct FileTabView: View {
         UTType(filenameExtension: "md") ?? .text,
         UTType(filenameExtension: "markdown") ?? .text,
         UTType(filenameExtension: "txt") ?? .text,
-        UTType(filenameExtension: "css") ?? .text,
-        UTType(filenameExtension: "js") ?? .text,
-        UTType(filenameExtension: "py") ?? .text,
-        UTType(filenameExtension: "rs") ?? .text,
-        UTType(filenameExtension: "go") ?? .text,
-        UTType(filenameExtension: "json") ?? .text,
-        UTType(filenameExtension: "yaml") ?? .text,
-        UTType(filenameExtension: "yml") ?? .text,
-        UTType(filenameExtension: "toml") ?? .text,
-        UTType(filenameExtension: "csv") ?? .text,
-        .data, // fallback for extension-less sniffing
+        .data,
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            dropZone
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                dropCard
 
-            if let selectedURL {
-                fileHeader(selectedURL)
+                if let selectedURL {
+                    fileCard(selectedURL)
+                }
+                if let inspectReport {
+                    inspectCard(inspectReport)
+                }
+                if let cleanResult {
+                    cleanCard(cleanResult)
+                }
             }
-
-            if let inspectReport {
-                inspectSection(inspectReport)
-            }
-
-            if let cleanResult {
-                cleanSection(cleanResult)
-            }
-
-            Spacer()
+            .padding(24)
         }
-        .padding(16)
         .alert("Error", isPresented: .constant(errorMessage != nil)) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -63,32 +52,44 @@ struct FileTabView: View {
         }
     }
 
-    private var dropZone: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6]))
-                .foregroundStyle(isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.5))
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(isDropTargeted ? Color.accentColor.opacity(0.08) : Color.clear)
-                )
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Clean a File")
+                .font(.largeTitle).bold()
+            Text("Remove AI provenance metadata and invisible characters from documents and images.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
 
-            VStack(spacing: 8) {
-                Image(systemName: "arrow.down.doc")
-                    .font(.system(size: 28))
-                    .foregroundStyle(.secondary)
-                Text("Drop a file here")
-                    .font(.headline)
-                Text("PNG, JPEG, SVG, PDF, DOCX, ODT, HTML, Markdown, or text/code")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Choose File…") { chooseFile() }
-                    .controlSize(.small)
+    private var dropCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "arrow.down.doc")
+                .font(.system(size: 36))
+                .foregroundStyle(isDropTargeted ? Color.accentColor : Color.secondary)
+            Text("Drop a file here")
+                .font(.title3).fontWeight(.medium)
+            Text("PDF, Word, Markdown, HTML, SVG, PNG, JPEG, text, code")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Button {
+                chooseFile()
+            } label: {
+                Label("Choose File…", systemImage: "folder")
             }
-            .padding(24)
+            .controlSize(.large)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 150)
+        .padding(40)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isDropTargeted ? Color.accentColor.opacity(0.06) : Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [8]))
+                .foregroundStyle(isDropTargeted ? Color.accentColor : Color.secondary.opacity(0.3))
+        )
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             guard let provider = providers.first else { return false }
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
@@ -106,11 +107,12 @@ struct FileTabView: View {
         }
     }
 
-    private func fileHeader(_ url: URL) -> some View {
-        HStack {
+    private func fileCard(_ url: URL) -> some View {
+        HStack(spacing: 14) {
             Image(systemName: "doc.fill")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading) {
+                .font(.system(size: 28))
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
                 Text(url.lastPathComponent).font(.headline)
                 Text(url.deletingLastPathComponent().path)
                     .font(.caption)
@@ -119,117 +121,161 @@ struct FileTabView: View {
                     .truncationMode(.middle)
             }
             Spacer()
-            actionButton(title: "Inspect", action: .inspect) { await runInspect(url) }
-            actionButton(title: "Clean", action: .clean) { await runClean(url) }
-            Button("Clear") { clearAll() }
+            actionButton(title: "Inspect", icon: "magnifyingglass", action: .inspect) { await runInspect(url) }
+            actionButton(title: "Clean", icon: "sparkles", action: .clean) { await runClean(url) }
+                .buttonStyle(.borderedProminent)
+            Button {
+                clearAll()
+            } label: {
+                Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
         }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func inspectSection(_ report: FileInspectReport) -> some View {
-        GroupBox("Inspect report") {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 16) {
-                    Label(report.kind.capitalized, systemImage: "doc.badge.magnifyingglass")
+    private func inspectCard(_ report: FileInspectReport) -> some View {
+        card(title: "What's in the file", icon: "doc.badge.magnifyingglass") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 20) {
+                    metaChip(report.kind.capitalized, icon: "doc")
                     if let format = report.format {
-                        Label(format, systemImage: "shippingbox")
+                        metaChip(format.uppercased(), icon: "shippingbox")
                     }
                 }
-                .font(.callout)
 
-                HStack(spacing: 16) {
-                    flag(label: "C2PA", present: report.hasC2PA)
-                    flag(label: "AI metadata", present: report.hasAIMetadata)
+                HStack(spacing: 20) {
+                    flagChip("C2PA provenance", present: report.hasC2PA)
+                    flagChip("AI metadata", present: report.hasAIMetadata)
                     if let total = report.suspiciousTotal {
-                        Label("\(total) suspicious chars", systemImage: total == 0 ? "checkmark.circle" : "exclamationmark.triangle")
-                            .foregroundStyle(total == 0 ? .green : .orange)
+                        flagChip("\(total) invisible chars", present: total > 0 ? true : false)
                     }
                 }
-                .font(.callout)
 
                 if let findings = report.findings, !findings.isEmpty {
                     Divider()
-                    Text("Findings").font(.caption).bold()
+                    Text("Details").font(.subheadline).bold()
                     ForEach(findings, id: \.self) { f in
                         Text("• \(f)")
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 if let hits = report.hits, !hits.isEmpty {
                     Divider()
-                    Text("Unicode hits").font(.caption).bold()
+                    Text("Invisible characters").font(.subheadline).bold()
                     ForEach(hits) { hit in
                         Text("[\(hit.kind)] \(hit.label) ×\(hit.count)")
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func cleanSection(_ result: FileCleanResult) -> some View {
-        GroupBox("Clean result") {
-            VStack(alignment: .leading, spacing: 6) {
+    private func cleanCard(_ result: FileCleanResult) -> some View {
+        card(title: "Cleaned", icon: "checkmark.circle.fill", tint: .green) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(result.output).font(.callout).textSelection(.enabled)
+                    Image(systemName: "doc.badge.checkmark")
+                        .foregroundStyle(.green)
+                    Text(URL(fileURLWithPath: result.output).lastPathComponent)
+                        .font(.headline)
                     Spacer()
-                    Button("Reveal in Finder") {
+                    Button {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: result.output)])
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
                     }
                     .controlSize(.small)
                 }
+                Text(result.output)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
 
-                if let bytesIn = result.bytesIn, let bytesOut = result.bytesOut {
-                    Text("\(bytesIn) → \(bytesOut) bytes")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 if let stats = result.stats {
-                    Text("Removed \(stats.removedCount) • Replaced \(stats.replacedCount) • \(stats.inputLength) → \(stats.outputLength) chars")
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 20) {
+                        miniStat("\(stats.removedCount)", "removed")
+                        miniStat("\(stats.replacedCount)", "replaced")
+                        miniStat("\(stats.inputLength) → \(stats.outputLength)", "chars")
+                    }
                 }
 
                 if let actions = result.actions, !actions.isEmpty {
                     Divider()
-                    Text("Actions").font(.caption).bold()
+                    Text("Actions taken").font(.subheadline).bold()
                     ForEach(actions, id: \.self) { a in
-                        Text("• \(a)").font(.caption).foregroundStyle(.secondary)
+                        Text("• \(a)").font(.callout).foregroundStyle(.secondary)
                     }
                 }
 
                 if result.stillHasC2PA == true || result.stillHasAIMetadata == true {
-                    Divider()
-                    Label("Residual C2PA/AI signals may remain. PDF stripping is best-effort without exiftool; pixel/soft-bound marks are out of scope.", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                    if let post = result.postFindings {
-                        ForEach(post, id: \.self) { f in
-                            Text("! \(f)").font(.caption).foregroundStyle(.orange)
-                        }
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Some provenance signals may remain. Pixel watermarks and C2PA soft-binding are outside what any tool can remove.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                    .padding(10)
+                    .background(Color.orange.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private func flag(label: String, present: Bool?) -> some View {
+    private func card<Content: View>(title: String, icon: String, tint: Color = .accentColor, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+                .foregroundStyle(tint)
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func metaChip(_ text: String, icon: String) -> some View {
+        Label(text, systemImage: icon)
+            .font(.callout)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.secondary.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private func flagChip(_ label: String, present: Bool?) -> some View {
         let ok = present == false
-        return Label(label, systemImage: ok ? "checkmark.circle" : "exclamationmark.triangle")
+        return Label(label, systemImage: ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .font(.callout)
             .foregroundStyle(ok ? Color.green : Color.orange)
     }
 
-    private func actionButton(title: String, action: Action, run: @escaping () async -> Void) -> some View {
+    private func miniStat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.callout).bold()
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func actionButton(title: String, icon: String, action: Action, run: @escaping () async -> Void) -> some View {
         Button {
             Task { await run() }
         } label: {
             if busy == action {
                 ProgressView().controlSize(.small)
             } else {
-                Text(title)
+                Label(title, systemImage: icon)
             }
         }
         .disabled(busy != nil)
@@ -273,7 +319,6 @@ struct FileTabView: View {
     }
 
     private func runClean(_ url: URL) async {
-        // Default output: <name>.cleaned.<ext> next to the original.
         let ext = url.pathExtension
         let base = url.deletingPathExtension()
         let defaultDest = base.appendingPathExtension("cleaned.\(ext)")

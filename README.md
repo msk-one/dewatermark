@@ -1,75 +1,101 @@
 # Dewatermark
 
-A native macOS front-end for [guillaumemeyer/watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover). Paste LLM-generated text or drop a file; get de-watermarked output back.
+A native macOS app that removes AI watermarks and provenance metadata from your text and files — for privacy and hygiene on content **you own**.
 
-- **Layer A (deterministic, offline)**: strips invisible Unicode (zero-width spaces/joiners, bidi controls, tag chars, variation selectors), normalizes exotic space homoglyphs, optional NFKC and aggressive Cyrillic/fullwidth confusable mapping.
-- **File cleaning**: C2PA / EXIF / XMP / document-properties metadata for PNG, JPEG, SVG, PDF, DOCX, ODT, HTML, and Markdown.
-- **Layer B (best-effort)**: LLM rewrite to reduce statistical (token-sampling) watermarks via a local [Ollama](https://ollama.com) model or any OpenAI-compatible endpoint. Rewritten output is scrubbed with Layer A again.
+Paste text from Claude, ChatGPT, or Gemini, or drop in a document. Dewatermark strips the hidden signals those tools leave behind.
+
+[![CI](https://github.com/msk-one/dewatermark/actions/workflows/ci.yml/badge.svg)](https://github.com/msk-one/dewatermark/actions/workflows/ci.yml)
+
+---
+
+## What it removes
+
+Modern AI tools mark their output in a few different ways. Dewatermark handles each:
+
+| What | How it's marked | What Dewatermark does |
+| --- | --- | --- |
+| **Invisible characters** | Zero-width spaces, hidden Unicode, exotic spaces | **Clean** — removes them, lossless |
+| **Statistical watermarks** | The word choices themselves (how Claude/Gemini actually mark text) | **Rewrite** — rewords with a local model to reduce them |
+| **File metadata** | C2PA "Content Credentials," AI tags in PDFs, Word docs, images | **Clean** — strips the metadata |
+
+**The one thing to understand:** Inspect only checks for *invisible characters*. Claude and Gemini embed their watermark in the *wording itself* — invisible to a character scan. If your text came from an LLM, use **Rewrite** to reduce those statistical marks. That's the main event for AI text.
+
+---
+
+## Quick start
+
+1. **Download** the latest `Dewatermark-x.y.z.dmg` from [Releases](https://github.com/msk-one/dewatermark/releases) and drag Dewatermark to Applications.
+2. **First launch:** right-click the app → **Open** (it's unsigned, so macOS asks once). Or run:
+   ```bash
+   xattr -d com.apple.quarantine /Applications/Dewatermark.app
+   ```
+3. That's it — no Python install, no dependencies. Everything needed is bundled.
+
+### Clean text
+Paste text into the **Text** tab → **Clean** to strip invisible characters → **Copy** or **Save As**.
+
+### Reduce AI watermarks in text
+Paste text → **Rewrite Text**. Uses a local AI model (via [Ollama](https://ollama.com)) to reword the text and reduce statistical watermarks. The result is cleaned again afterwards.
+
+**To enable Rewrite:**
+```bash
+# Install Ollama, then pull a model:
+ollama pull llama3.2
+```
+Dewatermark detects Ollama automatically once it's running. You can also point it at any OpenAI-compatible endpoint in Settings.
+
+### Clean a file
+Drop a file into the **File** tab (or Choose File) → **Clean**. Works with PDF, Word, Markdown, HTML, SVG, PNG, JPEG, and text/code files. Writes a `filename.cleaned.ext` next to the original — your original is never touched.
+
+---
 
 ## Requirements
 
-- macOS 13+
-- Python 3.10+ on the system (the engine is stdlib-only; no pip packages needed). The app auto-detects `python3` (Homebrew, `/usr/local`, `/usr/bin`); set a custom path in Settings if needed.
-- Optional: [Ollama](https://ollama.com) for Layer B (e.g. `ollama pull llama3.2`)
-- Optional system tools, auto-used when present: `exiftool` (better PDF strip), `c2patool` (C2PA manifest inspection)
+- macOS 13 or later
+- Nothing else for basic cleaning (Python 3 and all tools are bundled / auto-detected)
+- [Ollama](https://ollama.com) only if you want the Rewrite feature
 
-## Install
+Bundled tools (included, no install needed): **c2patool** (C2PA manifest inspection) and **exiftool** (thorough PDF/document metadata stripping).
 
-Download `Dewatermark-<version>.dmg` (or `.zip`) from Releases, drag to Applications.
+---
 
-The app is unsigned. First launch: right-click → Open, or run:
+## An honest note on what "removing a watermark" means
 
-```bash
-xattr -d com.apple.quarantine /Applications/Dewatermark.app
-```
+Text watermarks live in the wording itself, spread across every sentence. Two honest consequences:
 
-## Usage
+1. **Removing them means rewording, not tidying.** A light edit barely moves the signal. The Rewrite feature rewords substantially, which is what actually reduces it.
+2. **Rewording changes the copy.** The rewritten text is only as good as the local model doing the rewriting. For polished prose, that's a real trade-off.
 
-- **Text tab**: paste text → Inspect (shows suspicious codepoints) → Clean (Layer A, with stats) → Copy / Save As. `Rewrite (Layer B)…` opens the LLM rewrite sheet.
-- **File tab**: drop a file or Choose File → Inspect (C2PA/AI-metadata findings) → Clean → pick output (defaults to `<name>.cleaned.<ext>`). Originals are never overwritten.
+So: use **Clean** (invisible characters, file metadata) when you want a lossless, verifiable result. Use **Rewrite** when the statistical mark is the concern and you accept a rewording pass.
 
-## Development
+**What Dewatermark cannot do** (no tool can, honestly):
+- Remove pixel-level watermarks baked into AI-generated *images* (e.g. SynthID-media)
+- Defeat "soft-bound" C2PA that re-links to an online manifest
+- Guarantee any specific detector will pass — there's no public universal detector to test against
 
-```bash
-swift build                          # debug build
-swift run SmokeRunner                # CLT-safe smoke checks (no XCTest needed)
-swift test                           # XCTest suite (requires Xcode)
-python3 -m pytest                    # engine parity tests (upstream suite on vendored snapshot)
-scripts/vendor-engine.sh v0.3.1      # re-pin the vendored engine to an upstream ref
-```
+For your own content, this is a privacy and hygiene tool — not a way to pass AI-text off as human-written for fraud.
 
-The cleaning engine is a pinned, vendored snapshot of `watermarks-remover` in `Engine/watermarks-remover/` (see `VERSION.txt` for the upstream commit).
+---
 
-## Build & release
+## For developers
+
+Built on the excellent [watermarks-remover](https://github.com/guillaumemeyer/watermarks-remover) engine (vendored, pinned snapshot in `Engine/`).
 
 ```bash
-scripts/build-app.sh          # release build → signed Dewatermark.app (ad-hoc)
-scripts/make-dmg.sh 0.1.0     # → Dewatermark-0.1.0.dmg
-scripts/build-app.sh --run    # build and launch
+swift build                    # build
+swift test                     # test suite (requires Xcode)
+python3 -m pytest              # engine parity tests
+scripts/fetch-tools.sh         # fetch bundled tools (c2patool/exiftool)
+scripts/vendor-engine.sh main  # update the engine from upstream
+scripts/build-app.sh           # build the .app
+scripts/make-dmg.sh 0.2.0      # package a DMG
 ```
 
-Both build and package in `/tmp` (outside iCloud Drive) to avoid file-provider xattrs breaking code signing. Set `DIST_DIR=/path/to/dir` to place artifacts elsewhere.
-
-### CI
-
-`.github/workflows/ci.yml` runs on push/PR (macos-14): pytest parity suite, `swift test`, release build.
-
-### Releasing
-
-Tag and push — `.github/workflows/release.yml` builds the app, creates the zip + dmg, and publishes a GitHub Release:
-
+Release a new version:
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0 && git push origin v0.2.0   # CI builds and publishes the DMG + zip
 ```
-
-## Honesty notes (from upstream)
-
-- Layer A removals are **verifiable** (counts, actions). Layer B is **best-effort**: no tool can certify that a vendor detector will fail, and no public universal statistical-watermark detector exists.
-- Out of scope: pixel/audio/video watermarks (SynthID-media), C2PA soft binding, secret-key detectors, training backdoors. PDF stripping is best-effort without `exiftool`.
-- Layer B rewording degrades the copy — a rewrite can only be as good as the rewriting model.
-- Intended for content **you own** (privacy, hygiene). Do not present results as proof of human authorship.
 
 ## License
 
-MIT. The vendored engine retains the upstream MIT license in `Engine/watermarks-remover/LICENSE`.
+MIT. Engine and bundled tools retain their respective licenses (see `Engine/watermarks-remover/LICENSE`).

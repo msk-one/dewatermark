@@ -23,13 +23,23 @@ struct TextTabView: View {
     }
 
     var body: some View {
-        HSplitView {
-            inputPane
-                .frame(minWidth: 320)
-            outputPane
-                .frame(minWidth: 320)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                inputCard
+                actionRow
+                if let inspectReport {
+                    ReportView(report: inspectReport)
+                }
+                if !output.isEmpty {
+                    outputCard
+                }
+                if !actionLog.isEmpty {
+                    logCard
+                }
+            }
+            .padding(24)
         }
-        .padding(12)
         .sheet(isPresented: $showRewrite) {
             RewriteSheet(text: input) { result in
                 output = result.text
@@ -44,116 +54,160 @@ struct TextTabView: View {
         }
     }
 
-    private var inputPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Clean Text")
+                .font(.largeTitle).bold()
+            Text("Paste text from an LLM. Strip invisible characters, or reduce statistical watermarks with a rewrite.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var inputCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Input").font(.headline)
+                Label("Input", systemImage: "text.alignleft")
+                    .font(.headline)
                 Spacer()
-                Button("Paste") {
+                Button {
                     if let s = NSPasteboard.general.string(forType: .string) {
                         input = s
                     }
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
                 }
-                .help("Paste from clipboard")
-                Button("Clear") { input = ""; clearResults() }
-                    .disabled(input.isEmpty)
+                .controlSize(.small)
+                Button {
+                    input = ""; clearResults()
+                } label: {
+                    Label("Clear", systemImage: "xmark")
+                }
+                .controlSize(.small)
+                .disabled(input.isEmpty)
             }
 
             TextEditor(text: $input)
                 .font(.system(.body, design: .monospaced))
-                .border(.quaternary)
+                .frame(minHeight: 260)
+                .scrollContentBackground(.hidden)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                )
 
-            DisclosureGroup("Layer A options") {
-                Toggle("NFKC normalize", isOn: $nfkc)
-                Toggle("Aggressive homoglyphs (Cyrillic/fullwidth → ASCII)", isOn: $aggressive)
-                Toggle("Normalize exotic spaces", isOn: $normalizeSpaces)
+            DisclosureGroup("Options") {
+                Toggle("Normalize Unicode (NFKC)", isOn: $nfkc)
+                Toggle("Replace look-alike letters (Cyrillic/fullwidth → ASCII)", isOn: $aggressive)
+                Toggle("Normalize unusual spaces", isOn: $normalizeSpaces)
             }
-            .font(.caption)
+            .font(.callout)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
 
-            HStack {
-                actionButton(title: "Inspect", action: .inspect) { await runInspect() }
-                actionButton(title: "Clean", action: .clean) { await runClean() }
-                    .help("Strip invisible Unicode carriers (Layer A)")
-                Button("Rewrite (Layer B)…") { showRewrite = true }
-                    .disabled(input.isEmpty || busy != nil)
-                    .buttonStyle(.borderedProminent)
-                    .help("Reduce statistical word-choice watermarks via an LLM rewrite (best-effort)")
-            }
-            Text("Clean removes invisible characters. Rewrite reduces the statistical marks Claude/Gemini/ChatGPT actually use.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+    private var actionRow: some View {
+        HStack(spacing: 12) {
+            actionButton(title: "Inspect", icon: "magnifyingglass", action: .inspect) { await runInspect() }
+                .help("Look for invisible characters (Layer A)")
+            actionButton(title: "Clean", icon: "sparkles", action: .clean) { await runClean() }
+                .help("Strip invisible characters (Layer A)")
 
-            if let inspectReport {
-                ReportView(report: inspectReport)
+            Spacer()
+
+            Button {
+                showRewrite = true
+            } label: {
+                Label("Rewrite Text", systemImage: "arrow.triangle.2.circlepath")
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(input.isEmpty || busy != nil)
+            .help("Reduce statistical word-choice watermarks (Layer B, best-effort)")
         }
     }
 
-    private var outputPane: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var outputCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Output").font(.headline)
+                Label("Output", systemImage: "checkmark.circle")
+                    .font(.headline)
                 Spacer()
-                Button("Copy") {
+                Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(output, forType: .string)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
                 }
-                .disabled(output.isEmpty)
+                .controlSize(.small)
                 Button("Save As…") { saveOutput() }
-                    .disabled(output.isEmpty)
+                    .controlSize(.small)
             }
 
-            TextEditor(text: .constant(output.isEmpty ? "" : output))
+            TextEditor(text: .constant(output))
                 .font(.system(.body, design: .monospaced))
-                .border(.quaternary)
+                .frame(minHeight: 140)
+                .scrollContentBackground(.hidden)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.green.opacity(0.3), lineWidth: 1)
+                )
 
             if let stats {
-                GroupBox("Stats") {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Removed \(stats.removedCount) • Replaced \(stats.replacedCount) • \(stats.inputLength) → \(stats.outputLength) chars")
-                            .font(.callout)
-                        if !stats.removed.isEmpty {
-                            Text("Removed:").font(.caption).bold()
-                            ForEach(stats.removed.sorted(by: { $0.value > $1.value }), id: \.key) { k, v in
-                                Text("  \(k) ×\(v)").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        if !stats.replaced.isEmpty {
-                            Text("Replaced:").font(.caption).bold()
-                            ForEach(stats.replaced.sorted(by: { $0.value > $1.value }), id: \.key) { k, v in
-                                Text("  \(k) ×\(v)").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
-            if !actionLog.isEmpty {
-                GroupBox("Log") {
-                    ScrollView {
-                        Text(actionLog)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
-                    .frame(maxHeight: 120)
+                HStack(spacing: 20) {
+                    statPill("\(stats.removedCount)", "removed", .orange)
+                    statPill("\(stats.replacedCount)", "replaced", .blue)
+                    statPill("\(stats.inputLength) → \(stats.outputLength)", "chars", .secondary)
                 }
             }
         }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    private func actionButton(title: String, action: Action, run: @escaping () async -> Void) -> some View {
+    private var logCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Details", systemImage: "terminal")
+                .font(.headline)
+            ScrollView {
+                Text(actionLog)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: 120)
+        }
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func statPill(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.title3).bold().foregroundStyle(color)
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func actionButton(title: String, icon: String, action: Action, run: @escaping () async -> Void) -> some View {
         Button {
             Task { await run() }
         } label: {
             if busy == action {
                 ProgressView().controlSize(.small)
             } else {
-                Text(title)
+                Label(title, systemImage: icon)
             }
         }
+        .controlSize(.large)
         .disabled(input.isEmpty || busy != nil)
     }
 
