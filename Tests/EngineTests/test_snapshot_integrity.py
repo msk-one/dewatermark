@@ -19,6 +19,11 @@ EXPECTED_SCRIPTS = {
     "inspect_text.py",
     "rewrite_text.py",
     "text_unicode.py",
+    # v0.4.0+: audit / batch tools (stdlib-only)
+    "audit_lib.py",
+    "audit_dir.py",
+    "audit_website.py",
+    "clean_ctrlregen.py",
 }
 
 

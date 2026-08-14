@@ -7,12 +7,13 @@ public struct TextHit: Codable, Sendable, Identifiable {
     public let label: String       // e.g. "U+200B ZERO WIDTH SPACE (Cf)"
     public let count: Int
     public let kind: String        // strip | bidi | tag_chars | variation_selector | zwj_family | space | confusable | other_cf
+    public let confidence: String? // probable | informational (v0.4.0+)
     public let sampleOffsets: [Int]
 
     public var id: String { "\(codepoint)-\(kind)" }
 
     enum CodingKeys: String, CodingKey {
-        case codepoint, label, count, kind
+        case codepoint, label, count, kind, confidence
         case sampleOffsets = "sample_offsets"
     }
 }

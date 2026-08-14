@@ -1,4 +1,4 @@
 upstream: https://github.com/guillaumemeyer/watermarks-remover
-tag: v0.3.1
-commit: 056e7deb25f3e4eef9444dee8e2d781a29006e57
+tag: main
+commit: 256d90d1b12db64d0da9e670d7edf87507aa0210
 vendored: 2026-08-13

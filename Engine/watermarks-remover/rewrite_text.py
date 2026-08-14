@@ -10,7 +10,14 @@ Env (optional):
   WATERMARKS_REWRITE_BACKEND
   WATERMARKS_REWRITE_BASE_URL
   WATERMARKS_REWRITE_MODEL
-  WATERMARKS_REWRITE_API_KEY
+  WATERMARKS_REWRITE_API_KEY      (env-only; never pass keys on argv)
+  WATERMARKS_REWRITE_ALLOW_REMOTE (set to 1 to allow non-loopback endpoints)
+
+Security notes:
+  - Only http(s) endpoints are accepted; redirects are refused outright so an
+    Authorization header (API key) can never be re-sent to an unvalidated host.
+  - Non-loopback endpoints are denied unless WATERMARKS_REWRITE_ALLOW_REMOTE=1
+    (or --allow-remote) is set explicitly.
 """
 
 from __future__ import annotations
@@ -116,13 +123,50 @@ def _env(name: str, default: str | None = None) -> str | None:
     return v
 
 
-def _warn_remote(base_url: str) -> None:
-    host = urlparse(base_url).hostname or ""
-    if host not in ("localhost", "127.0.0.1", "::1"):
-        eprint(
-            f"warning: rewrite base URL host is '{host}' (not localhost); "
-            "content will leave this machine"
+def _flag_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _check_remote(base_url: str, allow_remote: bool) -> None:
+    """Enforce the rewrite-endpoint allowlist.
+
+    Default-deny: only loopback endpoints are accepted. Anything else requires
+    an explicit opt-in (--allow-remote / WATERMARKS_REWRITE_ALLOW_REMOTE=1),
+    and non-http(s) schemes (e.g. file://) are always refused.
+    """
+    u = urlparse(base_url)
+    if u.scheme not in ("http", "https"):
+        raise SystemExit(
+            f"error: rewrite base URL must be http(s), got scheme '{u.scheme}': {base_url}"
         )
+    host = u.hostname or ""
+    if host in _LOOPBACK_HOSTS:
+        return
+    if not allow_remote:
+        raise SystemExit(
+            "error: rewrite base URL host is not loopback "
+            f"('{host}'); refusing to send content off-machine. "
+            "Set WATERMARKS_REWRITE_ALLOW_REMOTE=1 or pass --allow-remote to override."
+        )
+    eprint(
+        f"warning: rewrite base URL host is '{host}' (not localhost); "
+        "content will leave this machine"
+    )
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse HTTP redirects.
+
+    urllib's default handler re-sends the request headers on 301/302/303,
+    which would forward the Authorization header (API key) to an unvalidated
+    host behind the localhost allowlist. Any 3xx now surfaces as HTTPError.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: N802
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
 
 
 def build_prompt(strength: str, text: str, *, lang: str, original_lang: str) -> str:
@@ -150,6 +194,8 @@ def build_prompt(strength: str, text: str, *, lang: str, original_lang: str) -> 
 
 
 def _http_json(url: str, payload: dict, headers: dict[str, str], timeout: float) -> dict:
+    if urlparse(url).scheme not in ("http", "https"):
+        raise ValueError(f"refusing non-http(s) rewrite endpoint: {url}")
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -157,7 +203,8 @@ def _http_json(url: str, payload: dict, headers: dict[str, str], timeout: float)
         headers={"Content-Type": "application/json", **headers},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    opener = urllib.request.build_opener(_NoRedirect())
+    with opener.open(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -228,6 +275,7 @@ def rewrite(
     layer_a_after: bool,
     temperature: float,
     candidates: int,
+    allow_remote: bool = False,
 ) -> tuple[str, dict]:
     prompt = build_prompt(strength, text, lang=lang, original_lang=original_lang)
     info: dict = {
@@ -251,7 +299,7 @@ def rewrite(
     if not base_url:
         raise SystemExit("error: --base-url required for ollama/openai-compatible backends")
 
-    _warn_remote(base_url)
+    _check_remote(base_url, allow_remote)
 
     n = max(1, candidates)
     outs: list[str] = []
@@ -299,7 +347,15 @@ def main() -> int:
         "--base-url",
         default=_env("WATERMARKS_REWRITE_BASE_URL", "http://127.0.0.1:11434"),
     )
-    p.add_argument("--api-key", default=_env("WATERMARKS_REWRITE_API_KEY"))
+    p.add_argument(
+        "--allow-remote",
+        action="store_true",
+        default=None,
+        help="Allow non-loopback rewrite endpoints (default: deny; "
+        "WATERMARKS_REWRITE_ALLOW_REMOTE=1 has the same effect)",
+    )
+    # NOTE: no --api-key flag on purpose — keys on argv are visible in `ps`
+    # and shell history. Set WATERMARKS_REWRITE_API_KEY instead.
     p.add_argument(
         "--strength",
         choices=("paraphrase", "backtranslate", "structural", "humanize", "code"),
@@ -326,16 +382,26 @@ def main() -> int:
         help="Skip Layer A scrub on model output",
     )
     p.add_argument("--json-stats", action="store_true", help="Stats JSON on stderr")
+    p.add_argument(
+        "--force-text",
+        action="store_true",
+        help="Rewrite even when the input looks like a binary container",
+    )
     args = p.parse_args()
 
-    text = read_text_input(args.path)
+    text = read_text_input(args.path, allow_binary=args.force_text)
+    allow_remote = (
+        args.allow_remote
+        if args.allow_remote is not None
+        else _flag_env("WATERMARKS_REWRITE_ALLOW_REMOTE")
+    )
     try:
         result, info = rewrite(
             text,
             backend=args.backend,
             model=args.model,
             base_url=args.base_url,
-            api_key=args.api_key,
+            api_key=_env("WATERMARKS_REWRITE_API_KEY"),
             strength=args.strength,
             lang=args.lang,
             original_lang=args.original_lang,
@@ -343,6 +409,7 @@ def main() -> int:
             layer_a_after=not args.no_layer_a_after,
             temperature=args.temperature,
             candidates=args.candidates,
+            allow_remote=allow_remote,
         )
     except (urllib.error.URLError, TimeoutError, RuntimeError) as e:
         eprint(f"rewrite failed: {e}")

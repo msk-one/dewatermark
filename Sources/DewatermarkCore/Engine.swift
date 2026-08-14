@@ -66,6 +66,7 @@ public struct CleanTextOptions: Sendable {
     public var nfkc: Bool = false
     public var aggressiveHomoglyphs: Bool = false
     public var normalizeSpaces: Bool = true
+    public var stripEmojiGlue: Bool = false  // paranoid: also strip ZWJ/VS after emoji bases
 
     public init() {}
 }
@@ -85,7 +86,8 @@ public final class Engine: @unchecked Sendable {
         case .failure(let error): throw error
         }
         let engineDir = engineDirOverride ?? Engine.defaultEngineDir()
-        self.init(bridge: try PythonBridge(pythonPath: python, engineDir: engineDir))
+        let tools = PythonBridge.defaultToolsBinDir(engineDir: engineDir)
+        self.init(bridge: try PythonBridge(pythonPath: python, engineDir: engineDir, toolsBinDir: tools))
     }
 
     /// Engine location: DEWATERMARK_ENGINE_DIR env (dev/tests) → app bundle Resources → repo-relative dev path.
@@ -108,9 +110,10 @@ public final class Engine: @unchecked Sendable {
 
     // MARK: - Text Layer A
 
-    public func inspectText(_ text: String, aggressive: Bool = false) throws -> TextInspectReport {
+    public func inspectText(_ text: String, aggressive: Bool = false, stripEmojiGlue: Bool = false) throws -> TextInspectReport {
         var args = ["-", "--json"]
         if aggressive { args.append("--aggressive") }
+        if stripEmojiGlue { args.append("--strip-emoji-glue") }
         let result = try bridge.run(script: "inspect_text.py", args: args, stdin: text,
                                     acceptableExitCodes: [0, 1])
         return try decode(TextInspectReport.self, from: result.stdout)
@@ -121,6 +124,7 @@ public final class Engine: @unchecked Sendable {
         if options.nfkc { args.append("--nfkc") }
         if options.aggressiveHomoglyphs { args.append("--aggressive-homoglyphs") }
         if !options.normalizeSpaces { args.append("--no-normalize-spaces") }
+        if options.stripEmojiGlue { args.append("--strip-emoji-glue") }
         let result = try bridge.run(script: "clean_text.py", args: args, stdin: text)
         let stats = try? decode(CleanStats.self, from: Data(result.stderr.utf8))
         return TextCleanResult(text: result.stdoutText, stats: stats, log: result.stderr)
@@ -158,6 +162,10 @@ public final class Engine: @unchecked Sendable {
                      "--timeout", String(Int(options.timeout)),
                      "--temperature", String(options.temperature),
                      "--candidates", String(options.candidates)]
+            if options.isRemote {
+                // v0.4.0+ refuses non-loopback endpoints unless explicitly allowed.
+                args.append("--allow-remote")
+            }
             if let key = options.apiKey, !key.isEmpty {
                 args += ["--api-key", key]
             }

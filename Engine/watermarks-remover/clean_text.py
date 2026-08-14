@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import cleaned_path, eprint, read_text_input, write_text_output  # noqa: E402
+from common import backup_path, cleaned_path, eprint, read_text_input, write_text_output  # noqa: E402
 from text_unicode import clean_text  # noqa: E402
 
 
@@ -29,7 +29,18 @@ def main() -> int:
         action="store_true",
         help="Do not rewrite exotic spaces to U+0020",
     )
+    p.add_argument(
+        "--strip-emoji-glue",
+        action="store_true",
+        help="Strip emoji presentation selectors/ZWJ even after an emoji base (paranoid)",
+    )
     p.add_argument("--stats", action="store_true", help="Print stats JSON to stderr")
+    p.add_argument(
+        "--force-text",
+        action="store_true",
+        help="Clean even when the input looks like a binary container "
+        "(this rewrites the bytes and will corrupt the file)",
+    )
     p.add_argument(
         "--in-place",
         action="store_true",
@@ -37,12 +48,13 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    text = read_text_input(args.path)
+    text = read_text_input(args.path, allow_binary=args.force_text)
     cleaned, stats = clean_text(
         text,
         nfkc=args.nfkc,
         aggressive_homoglyphs=args.aggressive_homoglyphs,
         normalize_spaces=not args.no_normalize_spaces,
+        strip_emoji_glue=args.strip_emoji_glue,
     )
 
     out = args.output
@@ -51,8 +63,7 @@ def main() -> int:
             eprint("--in-place requires a file path")
             return 2
         src = Path(args.path)
-        bak = src.with_suffix(src.suffix + ".bak")
-        bak.write_text(text, encoding="utf-8")
+        bak = backup_path(src)
         out = str(src)
     elif out is None and args.path not in (None, "-"):
         out = str(cleaned_path(Path(args.path)))

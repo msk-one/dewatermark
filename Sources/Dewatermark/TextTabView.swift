@@ -36,7 +36,6 @@ struct TextTabView: View {
                 actionLog = result.log
                 showRewrite = false
             }
-            .environmentObject(settings)
         }
         .alert("Error", isPresented: .constant(errorMessage != nil)) {
             Button("OK") { errorMessage = nil }
@@ -74,10 +73,15 @@ struct TextTabView: View {
             HStack {
                 actionButton(title: "Inspect", action: .inspect) { await runInspect() }
                 actionButton(title: "Clean", action: .clean) { await runClean() }
+                    .help("Strip invisible Unicode carriers (Layer A)")
                 Button("Rewrite (Layer B)…") { showRewrite = true }
                     .disabled(input.isEmpty || busy != nil)
-                    .help("Statistical watermark reduction via LLM rewrite (best-effort)")
+                    .buttonStyle(.borderedProminent)
+                    .help("Reduce statistical word-choice watermarks via an LLM rewrite (best-effort)")
             }
+            Text("Clean removes invisible characters. Rewrite reduces the statistical marks Claude/Gemini/ChatGPT actually use.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
 
             if let inspectReport {
                 ReportView(report: inspectReport)

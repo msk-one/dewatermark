@@ -7,7 +7,7 @@ enum MainTab: String, CaseIterable {
 }
 
 struct ContentView: View {
-    @StateObject private var settings = AppSettings.shared
+    @EnvironmentObject private var settings: AppSettings
     @State private var tab: MainTab = .text
     @State private var showSettings = false
     @State private var pythonStatus: String = "Checking Python…"
@@ -61,7 +61,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-                .environmentObject(settings)
         }
         .task { await probeStatus() }
         .onChange(of: settings.pythonPathOverride) { _ in

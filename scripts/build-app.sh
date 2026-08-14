@@ -43,6 +43,15 @@ cp "$ROOT"/Engine/watermarks-remover/*.py "$APP_DIR/Contents/Resources/Engine/"
 cp "$ROOT/Engine/watermarks-remover/LICENSE" "$APP_DIR/Contents/Resources/Engine/LICENSE"
 cp "$ROOT/Engine/watermarks-remover/VERSION.txt" "$APP_DIR/Contents/Resources/Engine/VERSION.txt"
 
+# Bundled helper tools (exiftool, c2patool) → Contents/Resources/Tools
+if [ -d "$ROOT/Tools" ]; then
+    echo ">> Bundling helper tools"
+    mkdir -p "$APP_DIR/Contents/Resources/Tools/bin"
+    cp "$ROOT"/Tools/bin/* "$APP_DIR/Contents/Resources/Tools/bin/"
+    cp -R "$ROOT/Tools/exiftool-lib" "$APP_DIR/Contents/Resources/Tools/exiftool-lib"
+    chmod +x "$APP_DIR/Contents/Resources/Tools/bin/"*
+fi
+
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

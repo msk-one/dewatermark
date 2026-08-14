@@ -9,7 +9,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import emit_json, eprint, read_text_input  # noqa: E402
+from common import (  # noqa: E402
+    MAX_INPUT_BYTES,
+    ROUTER_ADVICE,
+    classify_finding_confidence,
+    emit_json,
+    eprint,
+    read_text_input,
+)
 from container_meta import detect_container_format, inspect_container  # noqa: E402
 from image_meta import detect_format as detect_image_format  # noqa: E402
 from image_meta import inspect_image  # noqa: E402
@@ -49,16 +56,29 @@ def main() -> int:
         choices=("text", "image", "container", "auto"),
         default="auto",
     )
+    p.add_argument(
+        "--force-text",
+        action="store_true",
+        help="Scan as text even when the bytes look like a binary container",
+    )
     args = p.parse_args()
 
     if not args.path.is_file():
         eprint(f"not a file: {args.path}")
         return 2
 
+    if args.path.stat().st_size > MAX_INPUT_BYTES:
+        eprint(f"refusing input larger than {MAX_INPUT_BYTES} bytes: {args.path}")
+        return 2
+
     kind = args.force_type if args.force_type != "auto" else classify(args.path)
 
     if kind == "text":
-        text = read_text_input(str(args.path))
+        text = read_text_input(
+            str(args.path),
+            allow_binary=args.force_text,
+            advice=ROUTER_ADVICE,
+        )
         report = inspect_text(text, aggressive=args.aggressive)
         if args.json:
             emit_json({"kind": "text", **report.to_dict()})
@@ -78,7 +98,7 @@ def main() -> int:
             print(f"C2PA: {report.has_c2pa}")
             print(f"AI metadata: {report.has_ai_metadata}")
             for f in report.findings:
-                print(f"  - {f}")
+                print(f"  - [{classify_finding_confidence(f)}] {f}")
         return 0 if not (report.has_c2pa or report.has_ai_metadata) else 1
 
     report = inspect_container(args.path)
@@ -91,7 +111,7 @@ def main() -> int:
         print(f"C2PA: {report.has_c2pa}")
         print(f"AI metadata: {report.has_ai_metadata}")
         for f in report.findings:
-            print(f"  - {f}")
+            print(f"  - [{classify_finding_confidence(f)}] {f}")
     return 0 if not (report.has_c2pa or report.has_ai_metadata) else 1
 
 

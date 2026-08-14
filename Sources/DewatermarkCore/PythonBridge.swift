@@ -112,14 +112,33 @@ public struct PythonDiscovery: Sendable {
 public final class PythonBridge: @unchecked Sendable {
     public let pythonPath: String
     public let engineDir: URL
+    /// Directory holding bundled helper binaries (c2patool, exiftool), if present.
+    public let toolsBinDir: URL?
 
-    public init(pythonPath: String, engineDir: URL) throws {
+    public init(pythonPath: String, engineDir: URL, toolsBinDir: URL? = nil) throws {
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: engineDir.appendingPathComponent("clean_text.py").path, isDirectory: &isDir) else {
             throw PythonBridgeError.engineMissing(path: engineDir.path)
         }
         self.pythonPath = pythonPath
         self.engineDir = engineDir
+        self.toolsBinDir = toolsBinDir
+    }
+
+    /// Resolve the bundled tools dir: engine's sibling "../Tools/bin" (app bundle) or repo "Tools/bin" (dev).
+    public static func defaultToolsBinDir(engineDir: URL) -> URL? {
+        // App bundle: Contents/Resources/Engine → sibling Contents/Resources/Tools/bin
+        let bundledInApp = engineDir.deletingLastPathComponent().appendingPathComponent("Tools/bin")
+        if FileManager.default.fileExists(atPath: bundledInApp.appendingPathComponent("exiftool").path) {
+            return bundledInApp
+        }
+        // Dev: <package-root>/Tools/bin  (engineDir is <root>/Engine/watermarks-remover)
+        let repoTools = engineDir.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Tools/bin")
+        if FileManager.default.fileExists(atPath: repoTools.appendingPathComponent("exiftool").path) {
+            return repoTools
+        }
+        return nil
     }
 
     /// Run an engine script with arguments and optional stdin text.
@@ -142,9 +161,21 @@ public final class PythonBridge: @unchecked Sendable {
         process.executableURL = URL(fileURLWithPath: pythonPath)
         process.arguments = [engineDir.appendingPathComponent(script).path] + args
         var env = ProcessInfo.processInfo.environment
-        // Ensure common tool locations (exiftool/c2patool via homebrew) are reachable.
+        // Bundled tools take priority, then Homebrew, then the user's PATH.
+        var pathPrefixes: [String] = []
+        if let toolsBinDir { pathPrefixes.append(toolsBinDir.path) }
+        pathPrefixes += ["/opt/homebrew/bin", "/usr/local/bin"]
         let basePath = env["PATH"] ?? "/usr/bin:/bin"
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + basePath
+        env["PATH"] = (pathPrefixes + [basePath]).joined(separator: ":")
+        // exiftool is a Perl script; point it at the bundled module library.
+        if let toolsBinDir {
+            let perlLib = toolsBinDir.deletingLastPathComponent().appendingPathComponent("exiftool-lib").path
+            if let existing = env["PERL5LIB"], !existing.isEmpty {
+                env["PERL5LIB"] = perlLib + ":" + existing
+            } else {
+                env["PERL5LIB"] = perlLib
+            }
+        }
         env.merge(environment) { _, new in new }
         process.environment = env
 
